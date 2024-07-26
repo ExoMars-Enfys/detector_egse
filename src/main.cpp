@@ -9,7 +9,7 @@ char inBuffer[20] = {};
 const byte EOS = 0x0A; // the LF (line feed) character is used as an end-of-command-string indicator
 
 // set up the speed, mode and endianness of each device
-SPISettings settingsA(1000000, MSBFIRST, SPI_MODE1);
+SPISettings settingsA(1000000, MSBFIRST, SPI_MODE0);
 
 // sweep characteristics
 const int swir_dac_min = 0;
@@ -67,22 +67,30 @@ int parseDAC()
   return DACval;
 }
 
-// void sweepSWIR()
-// {
-// TODO: Chloe create a function that sweeps between min, and max constants at the top of the page, using the increment
-// Previous code:
-// for (int value = 1000; value < 2000; value += 50)
-// {
-//   digitalWrite(cs_swir_dac, LOW);
-//   SPI.transfer16(value);
-//   digitalWrite(cs_swir_dac, HIGH);
-// }
-// }
+void sweepSWIR()
+{
+  // TODO: Chloe create a function that sweeps between min, and max constants at the top of the page, using the increment
+  // Previous code:
+  for (int value = 0; value < 4095; value += 100)
+  {
+    digitalWrite(cs_swir_dac, LOW);
+    SPI.transfer16(value);
+    digitalWrite(cs_swir_dac, HIGH);
+    delay(50);
+  }
+}
 
-// void sweepMWIR()
-// {
-// TODO: Chloe create a function that sweeps between min, and max constants at the top of the page, using the increment
-// }
+void sweepMWIR()
+{
+  // TODO: Chloe create a function that sweeps between min, and max constants at the top of the page, using the increment
+  for (int value = 0; value < 4095; value += 100)
+  {
+    digitalWrite(cs_mwir_dac, LOW);
+    SPI.transfer16(value);
+    digitalWrite(cs_mwir_dac, HIGH);
+    delay(50);
+  }
+}
 
 void readADC()
 {
@@ -92,17 +100,19 @@ void readADC()
   SPI.beginTransaction(settingsA);
   digitalWrite(cs_adc, LOW);
   SPI.transfer16(0);
-  digitalWrite(cs_swir_dac, HIGH);
+  digitalWrite(cs_adc, HIGH);
+  delayMicroseconds(50);
 
   for (int i = 1; i < 9; i++)
   {
     digitalWrite(cs_adc, LOW);
-    adc_val = SPI.transfer16(i);
-    digitalWrite(cs_swir_dac, HIGH);
+    adc_val = SPI.transfer16(i << 11);
+    digitalWrite(cs_adc, HIGH);
     Serial.print(i - 1, DEC);
     Serial.print(": ");
-    Serial.print(adc_val, DEC);
+    Serial.print(adc_val, HEX);
     Serial.print(", ");
+    delayMicroseconds(50);
   }
   Serial.println();
   SPI.endTransaction();
@@ -230,11 +240,13 @@ void loop()
   if (swir_sweep_en == true)
   {
     // Then run the sweepSWIR function
+    sweepSWIR();
   }
 
   if (mwir_sweep_en == true)
   {
     // Then run the sweepMWIR function
+    sweepMWIR();
   }
 
   if (Serial.available() > 0)
