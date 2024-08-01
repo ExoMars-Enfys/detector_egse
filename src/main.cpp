@@ -4,6 +4,7 @@
 const int cs_swir_dac = 10;
 const int cs_mwir_dac = 9;
 const int cs_adc = 8;
+const int adc_pwr = 23;
 
 char inBuffer[20] = {};
 const byte EOS = 0x0A; // the LF (line feed) character is used as an end-of-command-string indicator
@@ -21,7 +22,8 @@ const int mwir_dac_max = 4095;
 const int mwir_dac_inc = 100;
 
 bool swir_sweep_en = false;
-bool mwir_sweep_en = true;
+bool mwir_sweep_en = false;
+bool pwr_en = false;
 
 // w - sweep short wave
 // snumber - set DAC number
@@ -97,6 +99,7 @@ void readADC()
   int adc_val;
   Serial.println("Reading ADC");
 
+  SPI.begin();
   SPI.beginTransaction(settingsA);
   digitalWrite(cs_adc, LOW);
   SPI.transfer16(0);
@@ -181,6 +184,7 @@ void parseCommand()
   case 's':
     DACwrite = parseDAC();
 
+    SPI.begin();
     SPI.beginTransaction(settingsA);
     digitalWrite(cs_swir_dac, LOW);
     SPI.transfer16(DACwrite);
@@ -194,6 +198,7 @@ void parseCommand()
   case 'm':
     DACwrite = parseDAC();
 
+    SPI.begin();
     SPI.beginTransaction(settingsA);
     digitalWrite(cs_mwir_dac, LOW);
     SPI.transfer16(DACwrite);
@@ -212,6 +217,12 @@ void parseCommand()
     readADC();
     break;
 
+  case 'p':
+    pwr_en = !pwr_en;
+    Serial.print("Toggle Power - ");
+    Serial.println(pwr_en, DEC);
+    break;
+
   default:
     Serial.println("ERR: Invalid CMD selected");
     break;
@@ -225,18 +236,34 @@ void setup()
   pinMode(cs_mwir_dac, OUTPUT);
   pinMode(cs_adc, OUTPUT);
 
-  digitalWrite(cs_swir_dac, HIGH);
-  digitalWrite(cs_mwir_dac, HIGH);
-  digitalWrite(cs_adc, HIGH);
-
-  SPI.begin();
-  SPI.beginTransaction(settingsA);
+  digitalWrite(cs_swir_dac, LOW);
+  digitalWrite(cs_mwir_dac, LOW);
+  digitalWrite(cs_adc, LOW);
+  digitalWrite(adc_pwr, LOW);
 
   //
 }
 
 void loop()
 {
+  if (pwr_en == true)
+  {
+    digitalWrite(cs_swir_dac, HIGH);
+    digitalWrite(cs_mwir_dac, HIGH);
+    digitalWrite(cs_adc, HIGH);
+    digitalWrite(adc_pwr, HIGH);
+  }
+  else
+  {
+    digitalWrite(cs_swir_dac, LOW);
+    digitalWrite(cs_mwir_dac, LOW);
+    digitalWrite(cs_adc, LOW);
+    digitalWrite(adc_pwr, LOW);
+    digitalWrite(11, LOW);
+    digitalWrite(12, LOW);
+    digitalWrite(13, LOW);
+  }
+
   if (swir_sweep_en == true)
   {
     // Then run the sweepSWIR function
