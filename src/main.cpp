@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <SPI.h>
 
+const int ver = 1; // version number
+
 const int cs_swir_dac = 10;
 const int cs_mwir_dac = 9;
 const int cs_adc = 8;
@@ -10,8 +12,11 @@ char inBuffer[20] = {};
 const byte EOS = 0x0A; // the LF (line feed) character is used as an end-of-command-string indicator
 
 // set up the speed, mode and endianness of each device
-SPISettings settingsA(1000000, MSBFIRST, SPI_MODE0);
+SPISettings settingsA(1000000, MSBFIRST, SPI_MODE3);
 
+// Enfys ADC characteristics
+const int adc_discard = 128; // number of samples to discard
+const int adc_average = 256; // number of samples to average
 // sweep characteristics
 const int swir_dac_min = 0;
 const int swir_dac_max = 4095;
@@ -31,7 +36,7 @@ bool pwr_en = false;
 // mnumber - set DAC number
 // r - read ADC channels
 
-// ------------------- Declare Internal Functions ----------------------------------------------------------------------
+// ------------------- Declare Internal Functions --------------------------------------------------
 
 char *readSerialBuffer()
 {
@@ -58,7 +63,6 @@ char *readSerialBuffer()
 int parseDAC()
 {
   char *serialBuffer = readSerialBuffer();
-
   int DACval = atoi(serialBuffer);
 
   if (DACval > 4095)
@@ -94,7 +98,7 @@ void sweepMWIR()
   }
 }
 
-void readADC()
+void readSingleSampleADC()
 {
   int adc_val;
   Serial.println("Reading ADC");
@@ -106,12 +110,12 @@ void readADC()
   digitalWrite(cs_adc, HIGH);
   delayMicroseconds(50);
 
-  for (int i = 1; i < 9; i++)
+  for (int ch = 1; ch < 9; ch++)
   {
     digitalWrite(cs_adc, LOW);
-    adc_val = SPI.transfer16(i << 11);
+    adc_val = SPI.transfer16(ch << 11);
     digitalWrite(cs_adc, HIGH);
-    Serial.print(i - 1, DEC);
+    Serial.print(ch - 1, DEC);
     Serial.print(": ");
     Serial.print(adc_val, HEX);
     Serial.print(", ");
@@ -121,48 +125,64 @@ void readADC()
   SPI.endTransaction();
 }
 
+void readEnfysADC()
+{
+  long adc_val; // Long to store the cumalitive value of the ADC
+  Serial.println("Reading Enfys ADC");
+  Serial.print("Number to be discarded per channel: ");
+  Serial.println(adc_discard, DEC);
+  Serial.print("Number to average per channel: ");
+  Serial.println(adc_average, DEC);
+
+  SPI.begin();
+  SPI.beginTransaction(settingsA);
+  digitalWrite(cs_adc, LOW);
+
+  for (int ch = 1; ch < 9; ch++)
+  {
+    adc_val = 0; // Reset the ADC value for each channel
+    for (int i = 0; i < adc_discard; i++)
+    {
+      SPI.transfer16(ch << 11);
+    }
+
+    for (int i = 0; i < adc_average; i++)
+    {
+      adc_val += SPI.transfer16(ch << 11);
+    }
+
+    Serial.print(ch - 1, DEC);
+    Serial.print(": ");
+    Serial.println(adc_val >> 8, HEX);
+  }
+  digitalWrite(cs_adc, HIGH);
+  SPI.endTransaction();
+  delayMicroseconds(50);
+  Serial.println("ADC Read Complete");
+}
+
 // ------------------- Main UI Function --------------------------------------------------------------------------------
 
-// void writeInstructions()
-// TODO: Chloe to update for this EGSE.
-// {
-//   Serial.println("");
-//   Serial.print("LGR Anode Board EGSE controller - Version ");
-//   Serial.println(ver);
-//   Serial.println("BJW - Mullard Space Science Laboratory");
-//   Serial.println("'I' = Prints these instructions");
-//   Serial.println("'L' = List all current settings");
-//   Serial.println("'X' = Restore power-up settings");
-//   Serial.println();
-//   Serial.println("'TnXXX' = Set the DAC n where n = A, B, or C, and XXX is the 12-bit value (in decimal)");
-//   Serial.println();
-//   Serial.println("'R' = Read all the channel counters");
-//   Serial.println("'C' = Clear all channel counters");
-//   Serial.println("'E' = Enable all channel counters");
-//   Serial.println("'D' = Disable all channel counters");
-//   Serial.println();
-//   Serial.println("'SA' = Initiate STIMs on side A");
-//   Serial.println("'SC' = Initiate STIMs on side C");
-//   Serial.println("'N'  = Stop STIM pulse generation");
-//   Serial.println();
-//   Serial.println("'F1' = Set frequency of STIM pulses to 5MHz");
-//   Serial.println("'F2' = Set frequency of STIM  pulses to 500kHz");
-//   Serial.println("'F3' = Set frequency of STIM pulses to 50kHz");
-//   Serial.println("'F4' = Set frequency of STIM pulses to 5kHz");
-//   Serial.println();
-//   Serial.println("'A' = Initiate a read of the Anode board temperature");
-//   Serial.println("'Wxxx'  = Start stream of anode temperature readings for xxx milliseconds (500 max.)");
-//   Serial.println();
-//   Serial.println("'Qxxxx' = Acquire counts for xxxx milliseconds (4095 max.)");
-//   Serial.println("'Pxxxx' = Same as Q but automatically clears and reads counters.");
-//   Serial.println("'Oxxxx' = Same as P but streams indefinitely until interrupted.");
-//   Serial.println("'Kxxxx' = Initiate a sweep with steps set by J command and count for xxxx ms (4095 max.)");
-//   Serial.println("'Jxxxx' = Set the step size for the automatic sweep [Default = 50].");
-//   Serial.println("");
-//   Serial.println("CR/LF (enter key) is the command string termination character");
-//   Serial.println("");
-//   return;
-// }
+void writeInstructions()
+{
+  Serial.println("");
+  Serial.print("Enfys Detector EGSE controller - Version: ");
+  Serial.println(ver);
+  Serial.println("BJW - Mullard Space Science Laboratory");
+  Serial.println("'i' = Prints these instructions");
+  Serial.println();
+  Serial.println("'p' = Toggle 3V3 power to ADC(on/off)");
+  Serial.println("'r' = Read ADC channels using Enfys default sampling");
+  Serial.println("'t' = Read a single sample of each of the ADC channels");
+
+  Serial.println("'sXXXX' = Set SWIR DAC to XXXX (0-4095)");
+  Serial.println("'mXXXX' = Set MWIR DAC to XXXX (0-4095)");
+  Serial.println();
+  Serial.println("'x' = Set both DACs back to 0");
+  Serial.println();
+  Serial.println();
+  return;
+}
 
 void parseCommand()
 {
@@ -171,14 +191,22 @@ void parseCommand()
 
   switch (temp)
   {
-  case 'w':
-    swir_sweep_en = !swir_sweep_en;
-    Serial.println("Toggled SWIR Sweep");
+  case 'i':
+    writeInstructions();
     break;
 
-  case 'k':
-    mwir_sweep_en = !mwir_sweep_en;
-    Serial.println("Toggled MWIR Sweep");
+  case 'p':
+    pwr_en = !pwr_en;
+    Serial.print("Toggle Power - ");
+    Serial.println(pwr_en, DEC);
+    break;
+
+  case 'r':
+    readEnfysADC();
+    break;
+
+  case 't':
+    readSingleSampleADC();
     break;
 
   case 's':
@@ -209,18 +237,38 @@ void parseCommand()
     Serial.println(DACwrite, DEC);
     break;
 
-  case 'i':
-    // write instructions
+  case 'x':
+    DACwrite = 0;
+
+    SPI.begin();
+    SPI.beginTransaction(settingsA);
+    digitalWrite(cs_swir_dac, LOW);
+    SPI.transfer16(DACwrite);
+    digitalWrite(cs_swir_dac, HIGH);
+    SPI.endTransaction();
+
+    Serial.print("Set SWIR DAC to: ");
+    Serial.println(DACwrite, DEC);
+
+    SPI.begin();
+    SPI.beginTransaction(settingsA);
+    digitalWrite(cs_mwir_dac, LOW);
+    SPI.transfer16(DACwrite);
+    digitalWrite(cs_mwir_dac, HIGH);
+    SPI.endTransaction();
+
+    Serial.print("Set MWIR DAC to: ");
+    Serial.println(DACwrite, DEC);
     break;
 
-  case 'r':
-    readADC();
+  case 'w':
+    swir_sweep_en = !swir_sweep_en;
+    Serial.println("Toggled SWIR Sweep");
     break;
 
-  case 'p':
-    pwr_en = !pwr_en;
-    Serial.print("Toggle Power - ");
-    Serial.println(pwr_en, DEC);
+  case 'k':
+    mwir_sweep_en = !mwir_sweep_en;
+    Serial.println("Toggled MWIR Sweep");
     break;
 
   default:
@@ -232,16 +280,18 @@ void parseCommand()
 // --------------------------- Standard Functions ----------------------------------------------------------------------
 void setup()
 {
+  // Configure SPI pins
   pinMode(cs_swir_dac, OUTPUT);
   pinMode(cs_mwir_dac, OUTPUT);
   pinMode(cs_adc, OUTPUT);
 
+  // Configure CS pins
   digitalWrite(cs_swir_dac, LOW);
   digitalWrite(cs_mwir_dac, LOW);
   digitalWrite(cs_adc, LOW);
   digitalWrite(adc_pwr, LOW);
 
-  //
+  writeInstructions();
 }
 
 void loop()
