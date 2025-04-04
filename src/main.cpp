@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 
-const int ver = 1; // version number
+const int ver = 3; // version number
 
 const int cs_swir_dac = 10;
 const int cs_mwir_dac = 9;
@@ -12,10 +12,11 @@ char inBuffer[20] = {};
 const byte EOS = 0x0A; // the LF (line feed) character is used as an end-of-command-string indicator
 
 // set up the speed, mode and endianness of each device
-SPISettings settingsA(1000000, MSBFIRST, SPI_MODE3);
+SPISettings settingsA(1000000, MSBFIRST, SPI_MODE0);
+SPISettings settingsB(1000000, MSBFIRST, SPI_MODE3);
 
 // Enfys ADC characteristics
-const int adc_discard = 128; // number of samples to discard
+const int adc_discard = 100; // number of samples to discard
 const int adc_average = 256; // number of samples to average
 // sweep characteristics
 const int swir_dac_min = 0;
@@ -84,6 +85,7 @@ void sweepSWIR()
     digitalWrite(cs_swir_dac, HIGH);
     delay(50);
   }
+  return;
 }
 
 void sweepMWIR()
@@ -96,6 +98,7 @@ void sweepMWIR()
     digitalWrite(cs_mwir_dac, HIGH);
     delay(50);
   }
+  return;
 }
 
 void readSingleSampleADC()
@@ -104,7 +107,8 @@ void readSingleSampleADC()
   Serial.println("Reading ADC");
 
   SPI.begin();
-  SPI.beginTransaction(settingsA);
+  SPI.beginTransaction(settingsB);
+  delay(20);
   digitalWrite(cs_adc, LOW);
   SPI.transfer16(0);
   digitalWrite(cs_adc, HIGH);
@@ -123,6 +127,7 @@ void readSingleSampleADC()
   }
   Serial.println();
   SPI.endTransaction();
+  return;
 }
 
 void readEnfysADC()
@@ -135,7 +140,7 @@ void readEnfysADC()
   Serial.println(adc_average, DEC);
 
   SPI.begin();
-  SPI.beginTransaction(settingsA);
+  SPI.beginTransaction(settingsB);
   digitalWrite(cs_adc, LOW);
 
   for (int ch = 1; ch < 9; ch++)
@@ -159,9 +164,10 @@ void readEnfysADC()
   SPI.endTransaction();
   delayMicroseconds(50);
   Serial.println("ADC Read Complete");
+  return;
 }
 
-// ------------------- Main UI Function --------------------------------------------------------------------------------
+// ------------------- Main UI Function ------------------------------------------------------------
 
 void writeInstructions()
 {
@@ -197,68 +203,113 @@ void parseCommand()
 
   case 'p':
     pwr_en = !pwr_en;
+    if (pwr_en == true)
+    {
+      SPI.beginTransaction(settingsB);
+    }
+    else
+    {
+      readSingleSampleADC();
+      SPI.beginTransaction(settingsA);
+    }
     Serial.print("Toggle Power - ");
     Serial.println(pwr_en, DEC);
+    SPI.endTransaction();
     break;
 
   case 'r':
-    readEnfysADC();
+    if (pwr_en == true)
+    {
+      readEnfysADC();
+    }
+    else
+    {
+      Serial.println("ERR: Power is off, please turn on 3V3 power before reading");
+    }
     break;
 
   case 't':
-    readSingleSampleADC();
+    if (pwr_en == true)
+    {
+      readSingleSampleADC();
+    }
+    else
+    {
+      Serial.println("ERR: Power is off, please turn on power before reading");
+    }
     break;
 
   case 's':
-    DACwrite = parseDAC();
+    if (pwr_en == true)
+    {
+      DACwrite = parseDAC();
 
-    SPI.begin();
-    SPI.beginTransaction(settingsA);
-    digitalWrite(cs_swir_dac, LOW);
-    SPI.transfer16(DACwrite);
-    digitalWrite(cs_swir_dac, HIGH);
-    SPI.endTransaction();
+      SPI.begin();
+      SPI.beginTransaction(settingsA);
+      digitalWrite(cs_swir_dac, LOW);
+      SPI.transfer16(DACwrite);
+      digitalWrite(cs_swir_dac, HIGH);
+      SPI.endTransaction();
 
-    Serial.print("Set SWIR DAC to: ");
-    Serial.println(DACwrite, DEC);
+      Serial.print("Set SWIR DAC to: ");
+      Serial.println(DACwrite, DEC);
+    }
+    else
+    {
+      Serial.println("ERR: Power is off, please turn on power before reading");
+    }
     break;
 
   case 'm':
-    DACwrite = parseDAC();
+    if (pwr_en == true)
+    {
+      DACwrite = parseDAC();
 
-    SPI.begin();
-    SPI.beginTransaction(settingsA);
-    digitalWrite(cs_mwir_dac, LOW);
-    SPI.transfer16(DACwrite);
-    digitalWrite(cs_mwir_dac, HIGH);
-    SPI.endTransaction();
+      SPI.begin();
+      SPI.beginTransaction(settingsA);
+      digitalWrite(cs_mwir_dac, LOW);
+      SPI.transfer16(DACwrite);
+      digitalWrite(cs_mwir_dac, HIGH);
+      SPI.endTransaction();
 
-    Serial.print("Set MWIR DAC to: ");
-    Serial.println(DACwrite, DEC);
+      Serial.print("Set MWIR DAC to: ");
+      Serial.println(DACwrite, DEC);
+    }
+    else
+    {
+      Serial.println("ERR: Power is off, please turn on power before reading");
+    }
     break;
 
   case 'x':
-    DACwrite = 0;
+    if (pwr_en == true)
+    {
+      DACwrite = 0;
 
-    SPI.begin();
-    SPI.beginTransaction(settingsA);
-    digitalWrite(cs_swir_dac, LOW);
-    SPI.transfer16(DACwrite);
-    digitalWrite(cs_swir_dac, HIGH);
-    SPI.endTransaction();
+      SPI.begin();
+      SPI.beginTransaction(settingsA);
+      digitalWrite(cs_swir_dac, LOW);
+      SPI.transfer16(DACwrite);
+      digitalWrite(cs_swir_dac, HIGH);
+      SPI.endTransaction();
 
-    Serial.print("Set SWIR DAC to: ");
-    Serial.println(DACwrite, DEC);
+      Serial.print("Set SWIR DAC to: ");
+      Serial.println(DACwrite, DEC);
 
-    SPI.begin();
-    SPI.beginTransaction(settingsA);
-    digitalWrite(cs_mwir_dac, LOW);
-    SPI.transfer16(DACwrite);
-    digitalWrite(cs_mwir_dac, HIGH);
-    SPI.endTransaction();
+      SPI.begin();
+      SPI.beginTransaction(settingsA);
+      digitalWrite(cs_mwir_dac, LOW);
+      SPI.transfer16(DACwrite);
+      digitalWrite(cs_mwir_dac, HIGH);
+      SPI.endTransaction();
 
-    Serial.print("Set MWIR DAC to: ");
-    Serial.println(DACwrite, DEC);
+      Serial.print("Set MWIR DAC to: ");
+      Serial.println(DACwrite, DEC);
+    }
+    else
+    {
+      Serial.println("ERR: Power is off, please turn on power before reading");
+    }
     break;
 
   case 'w':
@@ -275,9 +326,10 @@ void parseCommand()
     Serial.println("ERR: Invalid CMD selected");
     break;
   }
+  return;
 }
 
-// --------------------------- Standard Functions ----------------------------------------------------------------------
+// --------------------------- Standard Functions --------------------------------------------------
 void setup()
 {
   // Configure SPI pins
@@ -309,9 +361,6 @@ void loop()
     digitalWrite(cs_mwir_dac, LOW);
     digitalWrite(cs_adc, LOW);
     digitalWrite(adc_pwr, LOW);
-    digitalWrite(11, LOW);
-    digitalWrite(12, LOW);
-    digitalWrite(13, LOW);
   }
 
   if (swir_sweep_en == true)
