@@ -270,6 +270,12 @@ void parseCommand()
     Serial.println("ERR: Invalid CMD selected");
     break;
   }
+
+  // Clear serial buffer
+  while (Serial.available() > 0)
+  {
+    Serial.read();
+  }
   return;
 }
 
