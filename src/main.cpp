@@ -1,41 +1,39 @@
 #include <Arduino.h>
 #include <SPI.h>
 
-const int ver = 3; // version number
+const int ver = 5; // version number
 
+// TODO: Handle line feed
+
+// ------------------- Declare Constants -----------------------------------------------------------
+// --- Configure pins
 const int cs_swir_dac = 10;
 const int cs_mwir_dac = 9;
 const int cs_adc = 8;
 const int adc_pwr = 23;
 
+// --- Configure SPI settings
+// ADC128
+// SCLK is normally HIGH (CPOL=1)
+// Data is sampled on rising edge of clock (CPHA=1)
+// Therefore SPI Mode 3 is used, data is shifted out on falling SCLK and data is sampled on rising SCLK
+SPISettings ADCsettings(1000000, MSBFIRST, SPI_MODE3);
+
+// DAC121
+// SCLK is normally LOW (CPOL=0)
+// Data is sampled on falling edge of clock (CPHA=1)
+// Therefore SPI Mode 1 is used, data is shifted out on rising SCLK and data is sampled on falling SCLK
+SPISettings DACsettings(1000000, MSBFIRST, SPI_MODE1);
+
+// -- Enfys ADC sampling characteristics
+const int adc_discard = 100; // number of samples to discard
+const int adc_average = 256; // number of samples to average
+
+// -- Constants for program operation
 char inBuffer[20] = {};
 const byte EOS = 0x0A; // the LF (line feed) character is used as an end-of-command-string indicator
 
-// set up the speed, mode and endianness of each device
-SPISettings settingsA(1000000, MSBFIRST, SPI_MODE0);
-SPISettings settingsB(1000000, MSBFIRST, SPI_MODE3);
-
-// Enfys ADC characteristics
-const int adc_discard = 100; // number of samples to discard
-const int adc_average = 256; // number of samples to average
-// sweep characteristics
-const int swir_dac_min = 0;
-const int swir_dac_max = 4095;
-const int swir_dac_inc = 100;
-
-const int mwir_dac_min = 0;
-const int mwir_dac_max = 4095;
-const int mwir_dac_inc = 100;
-
-bool swir_sweep_en = false;
-bool mwir_sweep_en = false;
 bool pwr_en = false;
-
-// w - sweep short wave
-// snumber - set DAC number
-// k - sweep mid wave
-// mnumber - set DAC number
-// r - read ADC channels
 
 // ------------------- Declare Internal Functions --------------------------------------------------
 
@@ -74,41 +72,12 @@ int parseDAC()
   return DACval;
 }
 
-void sweepSWIR()
-{
-  // TODO: Chloe create a function that sweeps between min, and max constants at the top of the page, using the increment
-  // Previous code:
-  for (int value = 0; value < 4095; value += 100)
-  {
-    digitalWrite(cs_swir_dac, LOW);
-    SPI.transfer16(value);
-    digitalWrite(cs_swir_dac, HIGH);
-    delay(50);
-  }
-  return;
-}
-
-void sweepMWIR()
-{
-  // TODO: Chloe create a function that sweeps between min, and max constants at the top of the page, using the increment
-  for (int value = 0; value < 4095; value += 100)
-  {
-    digitalWrite(cs_mwir_dac, LOW);
-    SPI.transfer16(value);
-    digitalWrite(cs_mwir_dac, HIGH);
-    delay(50);
-  }
-  return;
-}
-
 void readSingleSampleADC()
 {
   int adc_val;
   Serial.println("Reading ADC");
 
-  SPI.begin();
-  SPI.beginTransaction(settingsB);
-  delay(20);
+  SPI.beginTransaction(ADCsettings);
   digitalWrite(cs_adc, LOW);
   SPI.transfer16(0);
   digitalWrite(cs_adc, HIGH);
@@ -139,8 +108,7 @@ void readEnfysADC()
   Serial.print("Number to average per channel: ");
   Serial.println(adc_average, DEC);
 
-  SPI.begin();
-  SPI.beginTransaction(settingsB);
+  SPI.beginTransaction(ADCsettings);
   digitalWrite(cs_adc, LOW);
 
   for (int ch = 1; ch < 9; ch++)
@@ -203,18 +171,8 @@ void parseCommand()
 
   case 'p':
     pwr_en = !pwr_en;
-    if (pwr_en == true)
-    {
-      SPI.beginTransaction(settingsB);
-    }
-    else
-    {
-      readSingleSampleADC();
-      SPI.beginTransaction(settingsA);
-    }
     Serial.print("Toggle Power - ");
     Serial.println(pwr_en, DEC);
-    SPI.endTransaction();
     break;
 
   case 'r':
@@ -244,8 +202,7 @@ void parseCommand()
     {
       DACwrite = parseDAC();
 
-      SPI.begin();
-      SPI.beginTransaction(settingsA);
+      SPI.beginTransaction(DACsettings);
       digitalWrite(cs_swir_dac, LOW);
       SPI.transfer16(DACwrite);
       digitalWrite(cs_swir_dac, HIGH);
@@ -265,8 +222,7 @@ void parseCommand()
     {
       DACwrite = parseDAC();
 
-      SPI.begin();
-      SPI.beginTransaction(settingsA);
+      SPI.beginTransaction(DACsettings);
       digitalWrite(cs_mwir_dac, LOW);
       SPI.transfer16(DACwrite);
       digitalWrite(cs_mwir_dac, HIGH);
@@ -286,8 +242,7 @@ void parseCommand()
     {
       DACwrite = 0;
 
-      SPI.begin();
-      SPI.beginTransaction(settingsA);
+      SPI.beginTransaction(DACsettings);
       digitalWrite(cs_swir_dac, LOW);
       SPI.transfer16(DACwrite);
       digitalWrite(cs_swir_dac, HIGH);
@@ -296,8 +251,7 @@ void parseCommand()
       Serial.print("Set SWIR DAC to: ");
       Serial.println(DACwrite, DEC);
 
-      SPI.begin();
-      SPI.beginTransaction(settingsA);
+      SPI.beginTransaction(DACsettings);
       digitalWrite(cs_mwir_dac, LOW);
       SPI.transfer16(DACwrite);
       digitalWrite(cs_mwir_dac, HIGH);
@@ -310,16 +264,6 @@ void parseCommand()
     {
       Serial.println("ERR: Power is off, please turn on power before reading");
     }
-    break;
-
-  case 'w':
-    swir_sweep_en = !swir_sweep_en;
-    Serial.println("Toggled SWIR Sweep");
-    break;
-
-  case 'k':
-    mwir_sweep_en = !mwir_sweep_en;
-    Serial.println("Toggled MWIR Sweep");
     break;
 
   default:
@@ -344,6 +288,8 @@ void setup()
   digitalWrite(adc_pwr, LOW);
 
   writeInstructions();
+
+  SPI.begin();
 }
 
 void loop()
@@ -361,18 +307,6 @@ void loop()
     digitalWrite(cs_mwir_dac, LOW);
     digitalWrite(cs_adc, LOW);
     digitalWrite(adc_pwr, LOW);
-  }
-
-  if (swir_sweep_en == true)
-  {
-    // Then run the sweepSWIR function
-    sweepSWIR();
-  }
-
-  if (mwir_sweep_en == true)
-  {
-    // Then run the sweepMWIR function
-    sweepMWIR();
   }
 
   if (Serial.available() > 0)
